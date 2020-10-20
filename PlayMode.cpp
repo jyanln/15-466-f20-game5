@@ -13,23 +13,23 @@
 
 #include <random>
 
-GLuint phonebank_meshes_for_lit_color_texture_program = 0;
-Load< MeshBuffer > phonebank_meshes(LoadTagDefault, []() -> MeshBuffer const * {
-	MeshBuffer const *ret = new MeshBuffer(data_path("phone-bank.pnct"));
-	phonebank_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
+GLuint racetrack_meshes_for_lit_color_texture_program = 0;
+Load< MeshBuffer > racetrack_meshes(LoadTagDefault, []() -> MeshBuffer const * {
+	MeshBuffer const *ret = new MeshBuffer(data_path("racetrack.pnct"));
+	racetrack_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
 	return ret;
 });
 
-Load< Scene > phonebank_scene(LoadTagDefault, []() -> Scene const * {
-	return new Scene(data_path("phone-bank.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
-		Mesh const &mesh = phonebank_meshes->lookup(mesh_name);
+Load< Scene > racetrack_scene(LoadTagDefault, []() -> Scene const * {
+	return new Scene(data_path("racetrack.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
+		Mesh const &mesh = racetrack_meshes->lookup(mesh_name);
 
 		scene.drawables.emplace_back(transform);
 		Scene::Drawable &drawable = scene.drawables.back();
 
 		drawable.pipeline = lit_color_texture_program_pipeline;
 
-		drawable.pipeline.vao = phonebank_meshes_for_lit_color_texture_program;
+		drawable.pipeline.vao = racetrack_meshes_for_lit_color_texture_program;
 		drawable.pipeline.type = mesh.type;
 		drawable.pipeline.start = mesh.start;
 		drawable.pipeline.count = mesh.count;
@@ -38,13 +38,13 @@ Load< Scene > phonebank_scene(LoadTagDefault, []() -> Scene const * {
 });
 
 WalkMesh const *walkmesh = nullptr;
-Load< WalkMeshes > phonebank_walkmeshes(LoadTagDefault, []() -> WalkMeshes const * {
-	WalkMeshes *ret = new WalkMeshes(data_path("phone-bank.w"));
+Load< WalkMeshes > racetrack_walkmeshes(LoadTagDefault, []() -> WalkMeshes const * {
+	WalkMeshes *ret = new WalkMeshes(data_path("racetrack.w"));
 	walkmesh = &ret->lookup("WalkMesh");
 	return ret;
 });
 
-PlayMode::PlayMode() : scene(*phonebank_scene) {
+PlayMode::PlayMode() : scene(*racetrack_scene) {
 	//create a player transform:
 	scene.transforms.emplace_back();
 	player.transform = &scene.transforms.back();
@@ -63,12 +63,24 @@ PlayMode::PlayMode() : scene(*phonebank_scene) {
 	//rotate camera facing direction (-z) to player facing direction (+y):
 	player.camera->transform->rotation = glm::angleAxis(glm::radians(90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
 
-	//start player walking at nearest walk point:
-	player.at = walkmesh->nearest_walk_point(player.transform->position);
-
+  init();
 }
 
 PlayMode::~PlayMode() {
+}
+
+void PlayMode::init() {
+	//start player walking at nearest walk point:
+	player.at = walkmesh->nearest_walk_point(player.transform->position);
+
+  player.speed = 0;
+  current_time = 0;
+  best_time = 0;
+}
+
+void PlayMode::finish_lap() {
+  best_time = std::min(best_time, current_time);
+  current_time = 0;
 }
 
 bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
@@ -77,35 +89,42 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 		if (evt.key.keysym.sym == SDLK_ESCAPE) {
 			SDL_SetRelativeMouseMode(SDL_FALSE);
 			return true;
-		} else if (evt.key.keysym.sym == SDLK_a) {
-			left.downs += 1;
-			left.pressed = true;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.downs += 1;
-			right.pressed = true;
-			return true;
 		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.downs += 1;
-			up.pressed = true;
+			accel.downs += 1;
+			accel.pressed = true;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.downs += 1;
-			down.pressed = true;
+			brake.downs += 1;
+			brake.pressed = true;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_SPACE) {
+			brake.downs += 1;
+			brake.pressed = true;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_LSHIFT) {
+			boost.downs += 1;
+			boost.pressed = true;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_RSHIFT) {
+			boost.downs += 1;
+			boost.pressed = true;
 			return true;
 		}
 	} else if (evt.type == SDL_KEYUP) {
-		if (evt.key.keysym.sym == SDLK_a) {
-			left.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_d) {
-			right.pressed = false;
-			return true;
-		} else if (evt.key.keysym.sym == SDLK_w) {
-			up.pressed = false;
+		if (evt.key.keysym.sym == SDLK_w) {
+		  accel.pressed = false;
 			return true;
 		} else if (evt.key.keysym.sym == SDLK_s) {
-			down.pressed = false;
+			brake.pressed = false;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_SPACE) {
+			brake.pressed = false;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_LSHIFT) {
+			boost.pressed = false;
+			return true;
+		} else if (evt.key.keysym.sym == SDLK_RSHIFT) {
+			boost.pressed = false;
 			return true;
 		}
 	} else if (evt.type == SDL_MOUSEBUTTONDOWN) {
@@ -139,16 +158,34 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 void PlayMode::update(float elapsed) {
 	//player walking:
 	{
-		//combine inputs into a move:
-		constexpr float PlayerSpeed = 3.0f;
-		glm::vec2 move = glm::vec2(0.0f);
-		if (left.pressed && !right.pressed) move.x =-1.0f;
-		if (!left.pressed && right.pressed) move.x = 1.0f;
-		if (down.pressed && !up.pressed) move.y =-1.0f;
-		if (!down.pressed && up.pressed) move.y = 1.0f;
+    // Update time
+    current_time += elapsed;
 
-		//make it so that moving diagonally doesn't go faster:
-		if (move != glm::vec2(0.0f)) move = glm::normalize(move) * PlayerSpeed * elapsed;
+    // Update player speed
+    player.speed *= speed_decay;
+    if(boost.pressed) {
+      player.speed += boost_accel_power * elapsed;
+      if(player.speed > boost_max_speed) player.speed = boost_max_speed;
+    } else if(accel.pressed && !brake.pressed) {
+      player.speed += accel_power * elapsed;
+
+      // Decay speed if it is recently boosted
+      if(player.speed > boost_max_speed) {
+        player.speed = boost_max_speed;
+      } else if(player.speed > max_speed) {
+        if(player.speed < max_speed + speed_snap) {
+          player.speed = max_speed;
+        } else {
+          player.speed -= boost_speed_decay * (max_speed - player.speed);
+        }
+      }
+    } else if(brake.pressed && !accel.pressed) {
+      player.speed -= brake_power * elapsed;
+      if(player.speed < 0) player.speed = 0;
+    }
+
+		//combine inputs into a move:
+		glm::vec2 move = glm::vec2(0.0f, player.speed) * elapsed;
 
 		//get move in world coordinate system:
 		glm::vec3 remain = player.transform->make_local_to_world() * glm::vec4(move.x, move.y, 0.0f, 0.0f);
@@ -183,6 +220,9 @@ void PlayMode::update(float elapsed) {
 				glm::vec3 along = glm::normalize(b-a);
 				glm::vec3 normal = glm::normalize(glm::cross(b-a, c-a));
 				glm::vec3 in = glm::cross(normal, along);
+        
+        // Reduce player speed for colliding
+        player.speed *= collision_decay;
 
 				//check how much 'remain' is pointing out of the triangle:
 				float d = glm::dot(remain, in);
@@ -194,10 +234,6 @@ void PlayMode::update(float elapsed) {
 					remain += 0.01f * d * in;
 				}
 			}
-		}
-
-		if (remain != glm::vec3(0.0f)) {
-			std::cout << "NOTE: code used full iteration budget for walking." << std::endl;
 		}
 
 		//update player's position to respect walking:
@@ -223,10 +259,9 @@ void PlayMode::update(float elapsed) {
 	}
 
 	//reset button press counters:
-	left.downs = 0;
-	right.downs = 0;
-	up.downs = 0;
-	down.downs = 0;
+	accel.downs = 0;
+	boost.downs = 0;
+	brake.downs = 0;
 }
 
 void PlayMode::draw(glm::uvec2 const &drawable_size) {
@@ -261,14 +296,23 @@ void PlayMode::draw(glm::uvec2 const &drawable_size) {
 		));
 
 		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
+		lines.draw_text("Best Time: " + std::to_string(best_time) + " Lap Time: " + std::to_string(current_time),
 			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
 		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion looks; WASD moves; escape ungrabs mouse",
+		lines.draw_text("Best Time: " + std::to_string(best_time) + " Lap Time: " + std::to_string(current_time),
 			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + + 0.1f * H + ofs, 0.0),
 			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+
+		lines.draw_text("Best Time: " + std::to_string(current_time),
+			glm::vec3(-aspect + 0.1f * H, 3.0 + 0.1f * H, 0.0),
+			glm::vec3(H, 3.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
+		lines.draw_text("Best Time: " + std::to_string(current_time),
+			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + 0.1f * H + ofs, 0.0),
+			glm::vec3(H, 0.0f, 3.0f), glm::vec3(0.0f, H, 0.0f),
 			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
 	}
 	GL_ERRORS();
